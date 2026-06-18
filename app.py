@@ -602,7 +602,8 @@ def upload():
     return jsonify({"status": "added", "paper_count": len(STATE["corpus"])})
 
 
-initialize_pipeline()
+import threading
+threading.Thread(target=initialize_pipeline, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
