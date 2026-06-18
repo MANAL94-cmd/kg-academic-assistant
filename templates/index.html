@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph Academic Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/static/vis-network.min.js"></script>
+<style>
+:root{
+  --paper:#f4f1ea;
+  --paper-deep:#ebe6d9;
+  --ink:#1b1a17;
+  --ink-soft:#52504a;
+  --rule:#d8d2c2;
+  --rule-strong:#1b1a17;
+  --accent:#9a2b1f;
+  --accent-soft:#c8552f;
+  --concept:#3d6b54;
+  --author:#2b5a9a;
+  --institution:#6b3d6b;
+  --dataset:#9a6b2b;
+  --retrieved:#e0a83a;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Inter',sans-serif;
+  font-size:15px;
+  line-height:1.55;
+}
+body::before{
+  content:'';
+  position:fixed; inset:0;
+  pointer-events:none;
+  z-index:999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+a{color:var(--accent);}
+
+/* ── Masthead ── */
+.masthead{
+  border-bottom:3px double var(--rule-strong);
+  padding:28px 40px 18px;
+  background:var(--paper);
+}
+.masthead-top{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--ink-soft);
+  margin-bottom:18px;
+}
+.masthead-title{
+  font-family:'Source Serif 4',serif;
+  font-weight:700;
+  font-size:clamp(30px,4vw,46px);
+  text-align:center;
+  letter-spacing:-0.01em;
+  margin:0;
+}
+.masthead-title em{font-style:italic; font-weight:400; color:var(--accent);}
+.masthead-sub{
+  text-align:center;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:12px; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--ink-soft);
+  margin-top:8px;
+}
+.masthead-pills{
+  display:flex; justify-content:center; gap:10px; flex-wrap:wrap;
+  margin-top:12px;
+}
+.masthead-pill{
+  font-family:'IBM Plex Mono',monospace; font-size:10px;
+  letter-spacing:0.1em; text-transform:uppercase;
+  border:1px solid var(--rule-strong); padding:3px 10px;
+  color:var(--ink-soft);
+}
+
+/* ── API Key bar ── */
+.keybar{
+  background:var(--ink);
+  color:var(--paper);
+  padding:10px 40px;
+  display:flex; align-items:center; gap:14px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:12px;
+  flex-wrap:wrap;
+}
+.keybar input{
+  background:#2a2823; border:1px solid #4a463e; color:var(--paper);
+  padding:7px 10px; font-family:'IBM Plex Mono',monospace; font-size:12px;
+  width:340px; border-radius:2px;
+}
+.keybar input:focus{outline:1px solid var(--accent-soft);}
+.keybar button{
+  background:var(--accent); color:var(--paper); border:none;
+  padding:8px 16px; font-family:'IBM Plex Mono',monospace; font-size:12px;
+  letter-spacing:0.05em; cursor:pointer; border-radius:2px;
+}
+.keybar button:hover{background:var(--accent-soft);}
+.keybar .status{margin-left:auto; font-size:11px; opacity:0.85;}
+.keybar .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#7a7568;margin-right:6px;}
+.keybar .dot.live{background:#5fa87a;}
+.keybar .dot.err{background:#c8552f;}
+
+/* ── Three-column shell ── */
+.shell{
+  display:grid;
+  grid-template-columns: 280px 1fr 320px;
+  max-width:1500px;
+  margin:0 auto;
+}
+@media (max-width: 1100px){.shell{grid-template-columns: 1fr;}}
+
+.col{padding:28px 26px;}
+.col-left{border-right:1px solid var(--rule); max-height:calc(100vh - 140px); overflow-y:auto;}
+.col-center{border-right:1px solid var(--rule);}
+.col-right{max-height:calc(100vh - 140px); overflow-y:auto;}
+
+/* ── Graph expand modal ── */
+.graph-modal{
+  display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(27,26,23,0.82); align-items:center; justify-content:center;
+}
+.graph-modal.open{display:flex;}
+.graph-modal-inner{
+  background:var(--paper); border:1px solid var(--rule-strong);
+  width:94vw; height:90vh; display:flex; flex-direction:column;
+  box-shadow:0 8px 40px rgba(0,0,0,0.4);
+}
+.graph-modal-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 16px; border-bottom:1px solid var(--rule); flex-shrink:0;
+}
+.graph-modal-title{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-soft);}
+#graph-modal-container{flex:1; min-height:0; height:calc(90vh - 48px); background:#fffdf8;}
+
+/* ── Section eyebrow labels ── */
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase;
+  color:var(--ink-soft);
+  border-bottom:1px solid var(--rule-strong);
+  padding-bottom:8px;
+  margin-bottom:16px;
+}
+
+/* ── Paper cards (left column) ── */
+.paper-card{
+  border:1px solid var(--rule); background:#fffdf8;
+  padding:14px 14px 12px; margin-bottom:14px; position:relative;
+}
+.paper-card::before{
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:var(--accent);
+}
+.paper-card .ptitle{font-family:'Source Serif 4',serif; font-weight:600; font-size:15px; margin-bottom:5px;}
+.paper-card .pabs{font-size:12.5px; color:var(--ink-soft); margin-top:8px; line-height:1.5;
+  max-height:0; overflow:hidden; transition:max-height 0.25s ease;}
+.paper-card.open .pabs{max-height:300px;}
+.paper-card .ptoggle{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--accent); cursor:pointer; margin-top:6px; display:inline-block;}
+
+/* ── Upload zone ── */
+.upload-zone{
+  border:1.5px dashed var(--rule-strong); padding:18px 14px; text-align:center;
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);
+  cursor:pointer; margin-bottom:18px; transition:background 0.15s; display:block;
+}
+.upload-zone:hover{background:var(--paper-deep);}
+.upload-zone input{display:none;}
+
+/* ── Stat rows ── */
+.stat-row{
+  display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace;
+  font-size:11.5px; padding:6px 0; border-bottom:1px solid var(--rule);
+}
+.stat-row .v{color:var(--accent); font-weight:600;}
+.stat-row .v.green{color:var(--concept);}
+.stat-row .v.blue{color:var(--author);}
+
+/* ── Query mode tabs ── */
+.mode-tabs{
+  display:flex; gap:0; margin-bottom:20px;
+  border-bottom:2px solid var(--rule-strong);
+}
+.mode-tab{
+  background:none; border:none; border-bottom:3px solid transparent;
+  padding:9px 18px; font-family:'IBM Plex Mono',monospace;
+  font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase;
+  color:var(--ink-soft); cursor:pointer; margin-bottom:-2px;
+  transition:color 0.15s;
+}
+.mode-tab.active{color:var(--accent); border-bottom-color:var(--accent);}
+.mode-tab:hover:not(.active){color:var(--ink);}
+
+/* ── Q&A shell ── */
+.qa-shell{max-width:760px; margin:0 auto;}
+.query-form{display:flex; gap:10px; margin-bottom:24px;}
+.query-form textarea{
+  flex:1; border:1.5px solid var(--rule-strong); background:#fffdf8; padding:14px 16px;
+  font-family:'Source Serif 4',serif; font-size:16px; color:var(--ink); resize:none; height:54px; line-height:1.4;
+}
+.query-form textarea:focus{outline:none; border-color:var(--accent);}
+.query-form button{
+  background:var(--ink); color:var(--paper); border:none; padding:0 22px;
+  font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap;
+}
+.query-form button:hover{background:var(--accent);}
+.query-form button:disabled{background:#9b968a; cursor:not-allowed;}
+
+/* ── Sample question pills ── */
+.sample-qs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:30px;}
+.sample-qs button{
+  background:none; border:1px solid var(--rule-strong); color:var(--ink-soft);
+  padding:5px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; border-radius:20px;
+}
+.sample-qs button:hover{border-color:var(--accent); color:var(--accent);}
+
+/* ── Answer cards ── */
+.answer-card{border-top:3px double var(--rule-strong); padding-top:20px; margin-bottom:36px;}
+.answer-q{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px;}
+.answer-q span{color:var(--ink); font-weight:600; text-transform:none; letter-spacing:0; font-family:'Inter',sans-serif; font-size:15px;}
+.answer-mode-badge{
+  display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:9.5px;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:var(--paper-deep); border:1px solid var(--rule-strong);
+  padding:2px 8px; margin-bottom:10px; color:var(--ink-soft);
+}
+.answer-body{font-family:'Source Serif 4',serif; font-size:18px; line-height:1.65; color:var(--ink); margin:14px 0 16px;}
+.answer-body p{margin:0 0 14px;}
+.source-tags{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;}
+.source-tag{font-family:'IBM Plex Mono',monospace; font-size:10.5px; background:var(--paper-deep); border:1px solid var(--rule-strong); padding:4px 10px; color:var(--ink);}
+.source-tag::before{content:"📄 ";}
+
+/* ── Learning path display ── */
+.learning-path-card{
+  border:1px solid var(--rule-strong); background:#fffdf8;
+  padding:16px; margin-top:16px;
+}
+.learning-path-card .lp-header{
+  font-family:'IBM Plex Mono',monospace; font-size:10px;
+  letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-soft);
+  border-bottom:1px solid var(--rule); padding-bottom:8px; margin-bottom:12px;
+}
+.lp-step{
+  display:flex; gap:14px; align-items:flex-start;
+  padding:10px 0; border-bottom:1px solid var(--rule);
+}
+.lp-step:last-child{border-bottom:none;}
+.lp-badge{
+  font-family:'IBM Plex Mono',monospace; font-size:9px;
+  letter-spacing:0.08em; text-transform:uppercase;
+  background:var(--ink); color:var(--paper);
+  padding:3px 8px; white-space:nowrap; flex-shrink:0; margin-top:3px;
+}
+.lp-text{font-family:'Source Serif 4',serif; font-size:14px; line-height:1.5; color:var(--ink);}
+
+/* ── Loading & empty states ── */
+.loading-state{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); padding:20px 0;}
+.loading-state .blink{animation:blink 1s infinite;}
+@keyframes blink{50%{opacity:0.2;}}
+.empty-state{text-align:center; padding:60px 20px; color:var(--ink-soft);}
+.empty-state .glyph{font-size:32px; margin-bottom:12px;}
+.empty-state .et{font-family:'Source Serif 4',serif; font-style:italic; font-size:16px;}
+
+/* ── Answer body markdown ── */
+.answer-body ul,.answer-body ol{margin:6px 0 14px 20px; padding:0;}
+.answer-body li{margin:4px 0; font-family:'Source Serif 4',serif; font-size:18px; line-height:1.6;}
+.answer-body strong{font-weight:700;}
+.answer-body em{font-style:italic;}
+.answer-body code{font-family:'IBM Plex Mono',monospace; font-size:14px; background:var(--paper-deep); padding:1px 5px; border-radius:2px;}
+.answer-body h3,.answer-body h4{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-soft); margin:16px 0 6px; border-bottom:1px solid var(--rule); padding-bottom:4px;}
+
+/* ── Upload progress ── */
+.upload-steps{font-family:'IBM Plex Mono',monospace; font-size:11px; margin-top:10px;}
+.upload-step{display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--rule); color:var(--ink-soft);}
+.upload-step:last-child{border-bottom:none;}
+.upload-step .step-dot{width:8px; height:8px; border-radius:50%; background:var(--rule); flex-shrink:0; transition:background 0.3s;}
+.upload-step.done .step-dot{background:var(--concept);}
+.upload-step.active .step-dot{background:var(--accent); animation:blink 0.8s infinite;}
+
+/* ── Knowledge graph (right column) ── */
+.graph-toolbar{display:flex; justify-content:flex-end; gap:6px; margin-bottom:6px; flex-wrap:wrap;}
+.graph-btn{background:none; border:1px solid var(--rule-strong); font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.06em; padding:3px 10px; cursor:pointer; color:var(--ink-soft);}
+.graph-btn:hover{background:var(--paper-deep); color:var(--ink);}
+.graph-wrap{position:relative;}
+#graph-container{height:480px; border:1px solid var(--rule-strong); background:#fffdf8; margin-bottom:6px;}
+.graph-empty{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--ink-soft); font-family:'Source Serif 4',serif; font-style:italic; font-size:14px; pointer-events:none; gap:8px;}
+.graph-empty .ge-glyph{font-size:28px; opacity:0.4;}
+
+.legend{display:flex; flex-direction:column; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; margin-bottom:16px;}
+.legend-item{display:flex; align-items:center; gap:8px;}
+.legend-dot{width:10px;height:10px;border-radius:50%; flex-shrink:0;}
+
+.relation-legend{margin-top:4px;}
+.relation-item{
+  display:flex; align-items:center; gap:8px;
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+  padding:4px 0; border-bottom:1px solid var(--rule); color:var(--ink-soft);
+}
+.relation-item:last-child{border-bottom:none;}
+.relation-line{width:22px; height:2px; background:var(--rule-strong); flex-shrink:0;}
+.relation-line.dashed{background:none; border-top:2px dashed #b8b0a0;}
+
+.graph-note{font-size:12px; color:var(--ink-soft); font-style:italic; font-family:'Source Serif 4',serif; line-height:1.5; border-left:2px solid var(--rule-strong); padding-left:12px; margin-top:10px;}
+
+/* ── Footer ── */
+.footer{
+  border-top:3px double var(--rule-strong); padding:18px 40px; display:flex; justify-content:space-between;
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft); letter-spacing:0.04em;
+  flex-wrap:wrap; gap:8px;
+}
+.footer-stat{color:var(--accent); font-weight:600;}
+
+/* ── Mobile improvements ── */
+@media (max-width:1100px){
+  .masthead{padding:20px 20px 14px;}
+  .masthead-pills{display:none;}
+  .keybar{padding:10px 20px; gap:10px;}
+  .keybar input{width:100%; min-width:0;}
+  .col{padding:20px 16px;}
+  .col-left,.col-right{max-height:none;}
+  #graph-container{height:320px;}
+  .qa-shell{max-width:100%;}
+  .footer{padding:14px 20px; flex-direction:column; gap:4px;}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-top">
+    <span>Vol. I — No. 1 · Dept. of Computer Science &amp; Engineering</span>
+    <span id="backend-tag">Backend: connecting…</span>
+  </div>
+  <h1 class="masthead-title">Knowledge Graph <em>Academic Assistant</em></h1>
+  <div class="masthead-sub">GraphRAG — FAISS · NetworkX · KeyBERT · Gemini · Python 3.11</div>
+  <div class="masthead-pills">
+    <span class="masthead-pill">Factual Q&amp;A</span>
+    <span class="masthead-pill">Summarization</span>
+    <span class="masthead-pill">Comparative Analysis</span>
+    <span class="masthead-pill">Learning Path</span>
+  </div>
+</header>
+
+<div class="keybar">
+  <span><span class="dot" id="status-dot"></span><strong>GEMINI KEY</strong></span>
+  <input type="password" id="api-key" placeholder="Paste your Gemini API key (stored in this tab only)">
+  <button onclick="setKey()">Connect</button>
+  <span class="status" id="key-status">not connected — never saved to the server</span>
+</div>
+
+<div class="shell">
+
+  <!-- ── Left: Corpus ── -->
+  <div class="col col-left">
+    <div class="eyebrow">Corpus</div>
+    <div id="paper-list">
+      <div class="loading-state"><span class="blink">▋</span> loading papers from backend…</div>
+    </div>
+
+    <div class="eyebrow" style="margin-top:24px;">Add a Paper</div>
+    <label class="upload-zone">
+      <input type="file" accept=".pdf" onchange="handleUpload(event)">
+      Drop a PDF here, or click to choose<br>
+      <span style="font-size:10px;opacity:0.7;">(parsed server-side · concepts extracted · added to graph)</span>
+    </label>
+
+    <div class="eyebrow" style="margin-top:24px;">Corpus Statistics</div>
+    <div class="stat-row"><span>Paper nodes</span><span class="v" id="stat-papers">—</span></div>
+    <div class="stat-row"><span>Concept nodes</span><span class="v green" id="stat-concepts">—</span></div>
+    <div class="stat-row"><span>DISCUSSES edges</span><span class="v" id="stat-discusses">—</span></div>
+    <div class="stat-row"><span>RELATED_TO edges</span><span class="v blue" id="stat-related">—</span></div>
+    <div class="stat-row"><span>Total graph edges</span><span class="v" id="stat-edges">—</span></div>
+    <div class="stat-row"><span>Retrieval mode</span><span class="v">GraphRAG</span></div>
+    <div class="stat-row"><span>Embedding model</span><span class="v">all-MiniLM-L6-v2</span></div>
+  </div>
+
+  <!-- ── Center: Q&A ── -->
+  <div class="col col-center">
+    <div class="qa-shell">
+      <div class="eyebrow">Query Mode</div>
+
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="qa" onclick="switchMode('qa')">Factual Q&amp;A</button>
+        <button class="mode-tab" data-mode="summarize" onclick="switchMode('summarize')">Summarize</button>
+        <button class="mode-tab" data-mode="compare" onclick="switchMode('compare')">Compare</button>
+        <button class="mode-tab" data-mode="path" onclick="switchMode('path')">Learning Path</button>
+      </div>
+
+      <div class="query-form">
+        <textarea id="query-input" placeholder="Ask anything about the papers in the corpus…"></textarea>
+        <button id="ask-btn" onclick="runQuery()">Ask →</button>
+      </div>
+
+      <div class="sample-qs" id="sample-qs-container"></div>
+
+      <div id="answers-feed">
+        <div class="empty-state" id="empty-state">
+          <div class="glyph">◈</div>
+          <div class="et">Connect your Gemini key above, then select a query mode and ask a question — the GraphRAG pipeline will retrieve from FAISS + the knowledge graph and answer with full source attribution.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── Right: Knowledge Graph ── -->
+  <div class="col col-right">
+    <div class="eyebrow">Knowledge Graph</div>
+    <div class="graph-toolbar">
+      <button class="graph-btn" onclick="fitGraph()">⊞ Fit</button>
+      <button class="graph-btn" onclick="zoomGraph(1.3)">＋</button>
+      <button class="graph-btn" onclick="zoomGraph(0.7)">－</button>
+      <button class="graph-btn" onclick="openGraphModal()" style="margin-left:auto;">⤢ Expand</button>
+    </div>
+    <div class="graph-wrap">
+      <div id="graph-container"></div>
+      <div class="graph-empty" id="graph-empty">
+        <span class="ge-glyph">◈</span>
+        <span>Ask a question to see the graph come alive</span>
+      </div>
+    </div>
+
+    <div class="eyebrow" style="margin-top:16px;">Node Types</div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#9a2b1f;"></span> Paper</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#3d6b54;"></span> Concept</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#2b5a9a;"></span> Author <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:#6b3d6b;"></span> Institution <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:#9a6b2b;"></span> Dataset <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:#e0a83a;"></span> Retrieved for query</div>
+    </div>
+
+    <div class="eyebrow">Relationship Types</div>
+    <div class="relation-legend">
+      <div class="relation-item"><span class="relation-line"></span> DISCUSSES</div>
+      <div class="relation-item"><span class="relation-line dashed"></span> RELATED_TO</div>
+      <div class="relation-item"><span class="relation-line" style="background:#b8b0a0;"></span> CITES <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="relation-item"><span class="relation-line" style="background:#b8b0a0;"></span> AUTHORED_BY <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="relation-item"><span class="relation-line" style="background:#b8b0a0;"></span> INTRODUCES <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+      <div class="relation-item"><span class="relation-line" style="background:#b8b0a0;"></span> USES_DATASET <span style="opacity:0.5;font-size:9.5px;">(planned)</span></div>
+    </div>
+
+    <div class="graph-note" id="graph-note">Live graph from the backend. Ask a question — nodes retrieved by FAISS + graph traversal will highlight in amber.</div>
+  </div>
+
+</div>
+
+<!-- ── Graph expand modal ── -->
+<div class="graph-modal" id="graph-modal" onclick="closeGraphModal(event)">
+  <div class="graph-modal-inner">
+    <div class="graph-modal-header">
+      <span class="graph-modal-title">Knowledge Graph — Full View</span>
+      <div style="display:flex;gap:6px;">
+        <button class="graph-btn" onclick="fitModalGraph()">⊞ Fit</button>
+        <button class="graph-btn" onclick="zoomModalGraph(1.3)">＋</button>
+        <button class="graph-btn" onclick="zoomModalGraph(0.7)">－</button>
+        <button class="graph-btn" onclick="closeGraphModal()" style="border-color:var(--accent);color:var(--accent);">✕ Close</button>
+      </div>
+    </div>
+    <div id="graph-modal-container"></div>
+  </div>
+</div>
+
+<footer class="footer">
+  <span>Knowledge Graph-Based Academic Assistant — Manal K · 25ETCS126008 · Dept. of CS&amp;E · 2026–2027 · <span class="footer-stat" id="footer-papers">—</span> papers · <span class="footer-stat" id="footer-concepts">—</span> concepts</span>
+  <span>Flask · FAISS · NetworkX · KeyBERT · Sentence-Transformers · Gemini · vis-network</span>
+</footer>
+
+<script>
+const API_BASE = "";
+let GEMINI_KEY = null;
+let network = null;
+let graphNodesRaw = [];
+let graphEdgesRaw = [];
+let currentMode = "qa";
+
+const SAMPLE_QUESTIONS = {
+  qa: [
+    "What are Naive RAG, Advanced RAG, and Modular RAG?",
+    "What is Corrective Retrieval Augmented Generation (CRAG)?",
+    "How does multi-head attention work in the Transformer?",
+    "What is masked language modeling in BERT?"
+  ],
+  summarize: [
+    "Summarize the three RAG paradigms from the RAG survey paper",
+    "Summarize the best practices for building a RAG pipeline",
+    "Summarize the key contributions of the BERT paper",
+    "Summarize how corrective RAG improves retrieval quality"
+  ],
+  compare: [
+    "Compare Naive RAG and Advanced RAG approaches",
+    "Compare BERT and the Transformer from Attention Is All You Need",
+    "Compare parametric memory and non-parametric memory in RAG",
+    "Compare different retrieval methods used in RAG systems"
+  ],
+  path: [
+    "Give me a learning path to understand RAG from basics to advanced",
+    "What papers should I read to understand Transformer-based RAG?",
+    "What should I study first to understand retrieval-augmented generation?",
+    "Learning path for knowledge-intensive NLP tasks using RAG"
+  ]
+};
+
+const MODE_PLACEHOLDERS = {
+  qa:        "Ask anything about the papers in the corpus…",
+  summarize: "Enter a paper name or topic to summarize…",
+  compare:   "Enter two concepts or papers to compare…",
+  path:      "Enter a topic to generate a learning path…"
+};
+
+const MODE_LABELS = {
+  qa:        "Factual Q&A",
+  summarize: "Summarization",
+  compare:   "Comparative Analysis",
+  path:      "Learning Path"
+};
+
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function inlineMarkdown(text){
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,"<em>$1</em>")
+    .replace(/`(.+?)`/g,"<code>$1</code>");
+}
+
+function renderMarkdown(text){
+  const lines = text.split("\n");
+  let html = "", inUl = false, inOl = false;
+  const closeList = () => {
+    if(inUl){ html += "</ul>"; inUl = false; }
+    if(inOl){ html += "</ol>"; inOl = false; }
+  };
+  for(const raw of lines){
+    const line = raw.trimEnd();
+    if(/^### /.test(line)){ closeList(); html += `<h4>${inlineMarkdown(line.slice(4))}</h4>`; continue; }
+    if(/^## /.test(line)){  closeList(); html += `<h3>${inlineMarkdown(line.slice(3))}</h3>`; continue; }
+    const bullet = line.match(/^[-*+] (.+)/);
+    if(bullet){ if(!inUl){ closeList(); html += "<ul>"; inUl=true; } html += `<li>${inlineMarkdown(bullet[1])}</li>`; continue; }
+    const num = line.match(/^\d+\. (.+)/);
+    if(num){ if(!inOl){ closeList(); html += "<ol>"; inOl=true; } html += `<li>${inlineMarkdown(num[1])}</li>`; continue; }
+    if(line.trim() === ""){ closeList(); continue; }
+    closeList();
+    html += `<p>${inlineMarkdown(line)}</p>`;
+  }
+  closeList();
+  return html;
+}
+
+function setKey(){
+  const val = document.getElementById("api-key").value.trim();
+  if(!val) return;
+  GEMINI_KEY = val;
+  document.getElementById("status-dot").classList.add("live");
+  document.getElementById("key-status").textContent = "connected — key kept in memory only for this session";
+}
+
+function switchMode(mode){
+  currentMode = mode;
+  document.querySelectorAll(".mode-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.mode === mode)
+  );
+  document.getElementById("query-input").placeholder = MODE_PLACEHOLDERS[mode];
+  renderSampleQuestions();
+}
+
+function renderSampleQuestions(){
+  const qs = SAMPLE_QUESTIONS[currentMode] || [];
+  document.getElementById("sample-qs-container").innerHTML =
+    qs.map(q => `<button onclick="fillSample(this)">${escapeHtml(q)}</button>`).join("");
+}
+
+function toggleCard(id){
+  document.getElementById(id).classList.toggle("open");
+}
+
+function fillSample(btn){
+  document.getElementById("query-input").value = btn.textContent;
+  runQuery();
+}
+
+async function loadStatus(){
+  try{
+    const res = await fetch(`${API_BASE}/api/status`);
+    const data = await res.json();
+    document.getElementById("backend-tag").textContent = data.ready ? "Backend: live" : "Backend: initializing…";
+
+    if(!data.ready){
+      setTimeout(loadStatus, 2000);
+      return;
+    }
+
+    document.getElementById("stat-papers").textContent   = data.stats.paper_nodes;
+    document.getElementById("stat-concepts").textContent = data.stats.concept_nodes;
+    document.getElementById("stat-edges").textContent    = data.stats.edges;
+    document.getElementById("stat-discusses").textContent = data.stats.discusses_edges ?? "—";
+    document.getElementById("stat-related").textContent  = data.stats.related_edges ?? "—";
+    const fp = document.getElementById("footer-papers");   if(fp) fp.textContent = data.stats.paper_nodes;
+    const fc = document.getElementById("footer-concepts"); if(fc) fc.textContent = data.stats.concept_nodes;
+
+    const list = document.getElementById("paper-list");
+    list.innerHTML = data.papers.map((p, i) => `
+      <div class="paper-card" id="card-${i}">
+        <div class="ptitle">${escapeHtml(p.display)}</div>
+        <div class="pabs">${escapeHtml(p.abstract)}</div>
+        <span class="ptoggle" onclick="toggleCard('card-${i}')">+ read abstract</span>
+      </div>
+    `).join("");
+
+    loadGraph();
+  } catch(e){
+    document.getElementById("backend-tag").textContent = "Backend: unreachable";
+    document.getElementById("status-dot").classList.add("err");
+    setTimeout(loadStatus, 3000);
+  }
+}
+
+async function loadGraph(){
+  const res = await fetch(`${API_BASE}/api/graph`);
+  const data = await res.json();
+  graphNodesRaw = data.nodes;
+  graphEdgesRaw = data.edges;
+  renderGraph();
+}
+
+function renderGraph(highlightPaperKeys=[], highlightConceptLabels=[]){
+  const nodes = graphNodesRaw.map(n => {
+    const isPaper = n.group === "paper";
+    let color = isPaper
+      ? { background:"#9a2b1f", border:"#5e150d" }
+      : { background:"#3d6b54", border:"#264636" };
+    let size = isPaper ? 22 : 10;
+
+    if(isPaper && highlightPaperKeys.includes(n.key)){
+      color = { background:"#e0a83a", border:"#8a661f" }; size = 28;
+    }
+    if(!isPaper && highlightConceptLabels.includes(n.label)){
+      color = { background:"#e0a83a", border:"#8a661f" }; size = 14;
+    }
+
+    return {
+      id: n.id,
+      label: n.label.length > 28 ? n.label.slice(0,26) + "…" : n.label,
+      shape: "dot", size, color,
+      font: { color:"#1b1a17", size: isPaper ? 12 : 10, face:"IBM Plex Mono" }
+    };
+  });
+
+  const edges = graphEdgesRaw.map(e => ({
+    from: e.from, to: e.to,
+    title: e.relation,
+    color: { color: e.relation === "RELATED_TO" ? "#c0b8a8" : "#c9c2ab" },
+    width: e.relation === "RELATED_TO" ? 1 : 1.5,
+    dashes: e.relation === "RELATED_TO",
+  }));
+
+  const container = document.getElementById("graph-container");
+  const visData = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+  const options = {
+    physics: { stabilization:true, barnesHut:{ gravitationalConstant:-2200, springLength:90 } },
+    interaction: { hover:true, zoomView:true, tooltipDelay:150 },
+    edges: { smooth: { type:"continuous" }, arrows:{ to:{ enabled:true, scaleFactor:0.4 } } }
+  };
+  network = new vis.Network(container, visData, options);
+  network.once("stabilized", () => {
+    document.getElementById("graph-empty").style.display = "none";
+  });
+}
+
+function fitGraph(){
+  if(network) network.fit({ animation:{ duration:400, easingFunction:"easeInOutQuad" } });
+}
+function zoomGraph(factor){
+  if(!network) return;
+  const scale = network.getScale() * factor;
+  network.moveTo({ scale, animation:{ duration:300, easingFunction:"easeInOutQuad" } });
+}
+
+let modalNetwork = null;
+function openGraphModal(){
+  if(!graphNodesRaw.length) return;
+  document.getElementById("graph-modal").classList.add("open");
+  // destroy previous instance
+  if(modalNetwork){ modalNetwork.destroy(); modalNetwork = null; }
+  // defer creation so the browser paints the modal and computes container size
+  setTimeout(() => {
+    const container = document.getElementById("graph-modal-container");
+    const nodes = graphNodesRaw.map(n => {
+      const isPaper = n.group === "paper";
+      const color = isPaper
+        ? { background:"#9a2b1f", border:"#5e150d" }
+        : { background:"#3d6b54", border:"#264636" };
+      return {
+        id: n.id,
+        label: n.label.length > 32 ? n.label.slice(0,30)+"…" : n.label,
+        shape:"dot", size: isPaper ? 26 : 12, color,
+        font:{ color:"#1b1a17", size: isPaper ? 13 : 11, face:"IBM Plex Mono" }
+      };
+    });
+    const edges = graphEdgesRaw.map(e => ({
+      from: e.from, to: e.to, title: e.relation,
+      color:{ color: e.relation === "RELATED_TO" ? "#c0b8a8" : "#c9c2ab" },
+      width: e.relation === "RELATED_TO" ? 1 : 1.5,
+      dashes: e.relation === "RELATED_TO",
+    }));
+    const visData = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+    modalNetwork = new vis.Network(container, visData, {
+      physics:{ stabilization:true, barnesHut:{ gravitationalConstant:-3000, springLength:130 } },
+      interaction:{ hover:true, zoomView:true, tooltipDelay:150 },
+      edges:{ smooth:{ type:"continuous" }, arrows:{ to:{ enabled:true, scaleFactor:0.5 } } }
+    });
+    modalNetwork.once("stabilized", () => {
+      modalNetwork.fit({ animation:{ duration:400, easingFunction:"easeInOutQuad" } });
+    });
+  }, 150);
+}
+function closeGraphModal(e){
+  if(e && e.target !== document.getElementById("graph-modal")) return;
+  document.getElementById("graph-modal").classList.remove("open");
+  if(modalNetwork){ modalNetwork.destroy(); modalNetwork = null; }
+}
+function fitModalGraph(){
+  if(modalNetwork) modalNetwork.fit({ animation:{ duration:400, easingFunction:"easeInOutQuad" } });
+}
+function zoomModalGraph(factor){
+  if(!modalNetwork) return;
+  modalNetwork.moveTo({ scale: modalNetwork.getScale()*factor, animation:{ duration:300, easingFunction:"easeInOutQuad" } });
+}
+
+function buildLearningPathHtml(path){
+  if(!path || path.length === 0) return "";
+  const labels = ["Foundation", "Core Methods", "Advanced Topics", "Applications", "Further Reading", "Beyond"];
+  const steps = path.map((title, i) => `
+    <div class="lp-step">
+      <span class="lp-badge">Step ${i+1} — ${labels[i] || "Reading"}</span>
+      <span class="lp-text">${escapeHtml(title)}</span>
+    </div>
+  `).join("");
+  return `
+    <div class="learning-path-card">
+      <div class="lp-header">Graph-Generated Reading Order (BFS over knowledge graph)</div>
+      ${steps}
+    </div>
+  `;
+}
+
+let cooldownTimer = null;
+let cooldownSeconds = 0;
+
+function startCooldown(seconds){
+  const btn = document.getElementById("ask-btn");
+  cooldownSeconds = seconds;
+  if(cooldownTimer) clearInterval(cooldownTimer);
+  btn.disabled = true;
+  btn.textContent = `${cooldownSeconds}s`;
+  cooldownTimer = setInterval(() => {
+    cooldownSeconds--;
+    if(cooldownSeconds <= 0){
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      btn.disabled = false;
+      btn.textContent = "Ask →";
+    } else {
+      btn.textContent = `${cooldownSeconds}s`;
+    }
+  }, 1000);
+}
+
+async function runQuery(){
+  const input = document.getElementById("query-input");
+  const question = input.value.trim();
+  if(!question) return;
+
+  if(!GEMINI_KEY){
+    alert("Paste your Gemini API key in the bar at the top and click Connect first.");
+    return;
+  }
+
+  const btn = document.getElementById("ask-btn");
+  btn.disabled = true;
+  btn.textContent = "Asking…";
+
+  const emptyState = document.getElementById("empty-state");
+  if(emptyState) emptyState.remove();
+
+  const feed = document.getElementById("answers-feed");
+  const card = document.createElement("div");
+  card.className = "answer-card";
+  card.innerHTML = `
+    <div class="answer-q">Question — <span>${escapeHtml(question)}</span></div>
+    <div class="loading-state"><span class="blink">▋</span> retrieving via FAISS + graph traversal (${MODE_LABELS[currentMode]})…</div>
+  `;
+  feed.prepend(card);
+
+  try{
+    const res = await fetch(`${API_BASE}/api/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, api_key: GEMINI_KEY, mode: currentMode })
+    });
+    const data = await res.json();
+
+    if(!res.ok || data.error){
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+
+    renderGraph(data.sources, data.concepts_used || []);
+    const gn = document.getElementById("graph-note");
+    if(gn) gn.textContent = `Last query (${MODE_LABELS[data.mode || currentMode]}) retrieved: ${data.sources_display.join(", ")}. Amber nodes were used to answer.`;
+
+    const degradedNote = data.degraded
+      ? `<div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--accent-soft);margin-bottom:10px;">⚠ all models were rate-limited — showing retrieved context directly</div>`
+      : "";
+
+    const learningPathHtml = buildLearningPathHtml(data.learning_path);
+
+    card.innerHTML = `
+      <div class="answer-q">Question — <span>${escapeHtml(question)}</span></div>
+      <div class="answer-mode-badge">${escapeHtml(MODE_LABELS[data.mode || currentMode])}</div>
+      ${degradedNote}
+      <div class="answer-body">${renderMarkdown(data.answer)}</div>
+      ${learningPathHtml}
+      <div class="source-tags">${data.sources_display.map(s => `<span class="source-tag">${escapeHtml(s)}</span>`).join("")}</div>
+    `;
+  } catch(err){
+    card.innerHTML = `
+      <div class="answer-q">Question — <span>${escapeHtml(question)}</span></div>
+      <div class="answer-body" style="color:#9a2b1f;">${escapeHtml(err.message)}</div>
+    `;
+  } finally {
+    input.value = "";
+    startCooldown(20);
+  }
+}
+
+document.getElementById("query-input").addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    runQuery();
+  }
+});
+
+async function handleUpload(e){
+  const file = e.target.files[0];
+  if(!file) return;
+
+  const steps = [
+    { id:"s1", label:"Uploading PDF" },
+    { id:"s2", label:"Parsing text & extracting title" },
+    { id:"s3", label:"Running KeyBERT concept extraction" },
+    { id:"s4", label:"Rebuilding knowledge graph" },
+    { id:"s5", label:"Rebuilding FAISS index" },
+  ];
+
+  const note = document.getElementById("paper-list");
+  const box = document.createElement("div");
+  box.innerHTML = `<div class="loading-state" style="margin-bottom:8px;"><span class="blink">▋</span> Processing <strong>${escapeHtml(file.name)}</strong></div>
+    <div class="upload-steps">${steps.map(s=>`<div class="upload-step" id="${s.id}"><span class="step-dot"></span>${escapeHtml(s.label)}</div>`).join("")}</div>`;
+  note.prepend(box);
+
+  const markStep = (id) => { const el = document.getElementById(id); if(el){ el.classList.remove("active"); el.classList.add("done"); } };
+  const startStep = (id) => { const el = document.getElementById(id); if(el) el.classList.add("active"); };
+
+  startStep("s1");
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try{
+    markStep("s1"); startStep("s2");
+    await new Promise(r => setTimeout(r, 300));
+    markStep("s2"); startStep("s3");
+
+    const res = await fetch(`${API_BASE}/api/upload`, { method:"POST", body: formData });
+    const data = await res.json();
+    if(!res.ok || data.error) throw new Error(data.error || "Upload failed");
+
+    markStep("s3"); startStep("s4");
+    await new Promise(r => setTimeout(r, 200));
+    markStep("s4"); startStep("s5");
+    await new Promise(r => setTimeout(r, 200));
+    markStep("s5");
+
+    box.remove();
+    await loadStatus();
+  } catch(err){
+    box.remove();
+    alert("Upload failed: " + err.message);
+  }
+  e.target.value = "";
+}
+
+// Init
+renderSampleQuestions();
+loadStatus();
+</script>
+
+</body>
+</html>
