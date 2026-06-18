@@ -17,10 +17,16 @@ Deploy on Render:
 """
 
 import os
+import gc
 import json
 import traceback
 from collections import deque
 import time
+
+# Reduce PyTorch/tokenizer thread overhead on small instances
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import fitz  # PyMuPDF
 import numpy as np
@@ -266,7 +272,7 @@ def build_faiss_index(corpus, embedder):
         return None, []
 
     texts = [c["text"] for c in chunks]
-    embeddings = embedder.encode(texts, show_progress_bar=False)
+    embeddings = embedder.encode(texts, show_progress_bar=False, batch_size=8)
 
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
@@ -445,6 +451,7 @@ def initialize_pipeline():
     log("Loading models (this can take 30-60s on first boot)...")
     STATE["embedder"] = SentenceTransformer("all-MiniLM-L6-v2")
     STATE["kw_model"] = KeyBERT(model=STATE["embedder"])
+    gc.collect()
 
     corpus = load_corpus_from_pdfs()
     if not corpus:
@@ -452,8 +459,14 @@ def initialize_pipeline():
         corpus = load_seed_corpus()
 
     STATE["corpus"] = corpus
+    gc.collect()
+
     STATE["graph"] = build_knowledge_graph(corpus, STATE["kw_model"])
+    gc.collect()
+
     STATE["faiss_index"], STATE["chunks"] = build_faiss_index(corpus, STATE["embedder"])
+    gc.collect()
+
     STATE["ready"] = True
     log("Pipeline ready.")
 
