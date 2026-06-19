@@ -1,6 +1,5 @@
-Flask==3.0.3
-flask-cors==4.0.1
-gunicorn==22.0.0
+streamlit>=1.35.0
+pyvis>=0.3.2
 PyMuPDF==1.24.10
 numpy==1.26.4
 networkx==3.3
