@@ -371,8 +371,11 @@ def _build_pipeline(embedder, kw_model):
 # ── Graph rendering ────────────────────────────────────────────────────────────
 
 def render_graph(G, corpus, highlighted_papers=None, highlighted_concepts=None):
+    # cdn_resources="in_line" inlines pyvis's binding JS into the HTML string;
+    # the default "local" emits <script src="lib/bindings/utils.js"> which 404s
+    # inside Streamlit's sandboxed components.html iframe and breaks the graph.
     net = Network(height="480px", width="100%", bgcolor="#fffdf8",
-                  font_color="#1b1a17", directed=True)
+                  font_color="#1b1a17", directed=True, cdn_resources="in_line")
     net.set_options("""{
       "physics": {
         "barnesHut": { "gravitationalConstant": -2200, "springLength": 90 }
