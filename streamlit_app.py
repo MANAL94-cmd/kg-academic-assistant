@@ -530,6 +530,12 @@ with col_qa:
         if sq_cols[i % 2].button(q, key=f"sq_{mode}_{i}", use_container_width=True):
             st.session_state["qa_input"] = q
 
+    # Clear the box from a previous submit BEFORE the widget is instantiated —
+    # Streamlit forbids mutating a widget's key after the widget is created.
+    if st.session_state.get("_clear_qa_input"):
+        st.session_state["qa_input"] = ""
+        st.session_state["_clear_qa_input"] = False
+
     if "qa_input" not in st.session_state:
         st.session_state["qa_input"] = ""
 
@@ -581,7 +587,7 @@ with col_qa:
                 })
                 st.session_state.hl_papers   = source_keys
                 st.session_state.hl_concepts = concepts
-                st.session_state["qa_input"] = ""
+                st.session_state["_clear_qa_input"] = True
                 st.rerun()
 
     if not api_key:
