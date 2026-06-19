@@ -1,3 +1,9 @@
+# Force the CPU-only PyTorch build. The default PyPI torch wheel bundles CUDA
+# (~2.5GB) and overruns Streamlit Cloud's disk/RAM limits, hanging the app on
+# the loading screen. The +cpu wheel is ~200MB and loads in far less memory.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+
 streamlit>=1.35.0
 pyvis>=0.3.2
 PyMuPDF==1.24.10
