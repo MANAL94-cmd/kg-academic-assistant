@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import AnswerCard from "./AnswerCard.jsx";
 import {
   MODES,
@@ -6,8 +6,6 @@ import {
   MODE_PLACEHOLDERS,
   SAMPLE_QUESTIONS,
 } from "../constants.js";
-
-const COOLDOWN_SECONDS = 20;
 
 export default function QueryPanel({
   mode,
@@ -18,28 +16,10 @@ export default function QueryPanel({
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-  const timerRef = useRef(null);
-
-  useEffect(() => () => clearInterval(timerRef.current), []);
-
-  const startCooldown = () => {
-    setCooldown(COOLDOWN_SECONDS);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setCooldown((s) => {
-        if (s <= 1) {
-          clearInterval(timerRef.current);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-  };
 
   const submit = async (questionText) => {
     const question = (questionText ?? input).trim();
-    if (!question || busy || cooldown > 0) return;
+    if (!question || busy) return;
     if (!keyConnected) {
       alert("Paste your Gemini API key in the bar at the top and click Connect first.");
       return;
@@ -52,12 +32,11 @@ export default function QueryPanel({
     } finally {
       setBusy(false);
       setInput("");
-      startCooldown();
     }
   };
 
-  const askLabel = busy ? "Asking…" : cooldown > 0 ? `${cooldown}s` : "Ask →";
-  const askDisabled = busy || cooldown > 0;
+  const askLabel = busy ? "Asking…" : "Ask →";
+  const askDisabled = busy;
 
   return (
     <div className="col col-center">
