@@ -1,8 +1,19 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 .env
-papers/
-*.faiss
+.env.*
+*.env
 venv/
 .venv/
+
+# Corpus uploads (PDFs are not committed)
+papers/
+backend/papers/
+*.faiss
+
+# Node / React build artifacts
+node_modules/
+frontend/dist/
+frontend/.vite/

@@ -1,0 +1,16 @@
+# ── Legacy Streamlit app (kept as a fallback UI) ─────────────────────────────
+# The React + Flask stack is the primary app now (see ../backend, ../frontend).
+# This file lets the old Streamlit UI still run / deploy on Streamlit Cloud.
+# Run from the repo root:  streamlit run legacy/streamlit_app.py
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+
+streamlit>=1.35.0
+pyvis>=0.3.2
+PyMuPDF==1.24.10
+numpy>=1.23.0,<2.0
+networkx>=3.0
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.0
+keybert>=0.7.0
+requests>=2.28.0

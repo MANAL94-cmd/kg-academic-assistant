@@ -3,8 +3,11 @@ services:
     name: kg-academic-assistant
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"
+    # Install the Flask backend, then build the React frontend into
+    # frontend/dist/ (which the backend serves). Render's Python image ships
+    # with Node + npm available.
+    buildCommand: "pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"
+    startCommand: "gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0

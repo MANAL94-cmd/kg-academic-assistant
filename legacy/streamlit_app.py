@@ -26,8 +26,10 @@ from keybert import KeyBERT
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-PAPERS_DIR = os.path.join(os.path.dirname(__file__), "papers")
-SEED_DATA_PATH = os.path.join(os.path.dirname(__file__), "seed_corpus.json")
+# This legacy Streamlit app shares the corpus with the Flask backend.
+_BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
+PAPERS_DIR = os.path.join(_BACKEND_DIR, "papers")
+SEED_DATA_PATH = os.path.join(_BACKEND_DIR, "seed_corpus.json")
 
 QUERY_PROMPTS = {
     "qa": """You are an academic research assistant. Using the research context below, give a clear and direct answer to the question. Synthesize information across the papers — never say "the context does not state" or hedge. Always name the paper(s) you draw from. Keep the answer to 2-3 focused paragraphs.
@@ -88,7 +90,7 @@ LEARNING TOPIC: {question}
 LEARNING PATH:""",
 }
 
-FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash-8b"]
 
 MODE_LABELS = {
     "qa":        "Factual Q&A",

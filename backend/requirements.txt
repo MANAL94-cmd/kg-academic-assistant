@@ -1,0 +1,16 @@
+# ── Flask backend (the React app's API) ──────────────────────────────────────
+# Force the CPU-only PyTorch build. The default PyPI torch wheel bundles CUDA
+# (~2.5GB) and overruns small free-tier instances. The +cpu wheel is ~200MB.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+
+flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=21.2.0
+PyMuPDF==1.24.10
+numpy>=1.23.0,<2.0
+networkx>=3.0
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.0
+keybert>=0.7.0
+requests>=2.28.0

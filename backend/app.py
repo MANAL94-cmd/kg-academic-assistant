@@ -7,13 +7,18 @@ FAISS vector search -> GraphRAG context merge -> Gemini answer.
 Supports 4 query modes: factual Q&A, paper summarization,
 comparative analysis, and learning path generation (BFS over graph).
 
-Run locally:
-    pip install -r requirements.txt
-    python app.py
+Run locally (from the repo root):
+    pip install -r backend/requirements.txt
+    python backend/app.py            # serves the API on :5000
+
+During frontend development, run the React dev server separately
+(`cd frontend && npm run dev`) — it proxies /api calls to this backend.
+For production, build the frontend (`npm run build`) and this app will
+serve the compiled files from frontend/dist.
 
 Deploy on Render:
-    Build command: pip install -r requirements.txt
-    Start command: gunicorn app:app
+    Build command: pip install -r backend/requirements.txt && cd frontend && npm install && npm run build
+    Start command: gunicorn --chdir backend app:app
 """
 
 import os
@@ -33,19 +38,25 @@ import numpy as np
 import networkx as nx
 import faiss
 import requests
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from sentence_transformers import SentenceTransformer
 from keybert import KeyBERT
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(__file__)
+# Compiled React app (produced by `cd frontend && npm run build`).
+# In development this folder may not exist yet — the Vite dev server serves
+# the UI instead and proxies /api/* calls here.
+FRONTEND_DIST = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist"))
+
+app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="")
 CORS(app)
 
 # Simple in-memory cache — keyed by (question_lower, mode)
 _answer_cache: dict = {}
 
-PAPERS_DIR = os.path.join(os.path.dirname(__file__), "papers")
-SEED_DATA_PATH = os.path.join(os.path.dirname(__file__), "seed_corpus.json")
+PAPERS_DIR = os.path.join(BASE_DIR, "papers")
+SEED_DATA_PATH = os.path.join(BASE_DIR, "seed_corpus.json")
 
 # ---------------------------------------------------------------------------
 # Global state — built once at startup, rebuildable via /api/rebuild
@@ -182,8 +193,11 @@ def parse_pdf(filepath):
     return {
         "title": filename,
         "display": display,
-        "abstract": abstract[:1200] if abstract else full_text_clean[:400],
-        "fulltext": full_text_clean[:6000],
+        "abstract": abstract[:1500] if abstract else full_text_clean[:500],
+        # Index (nearly) the whole paper, not just the first ~1000 words. The
+        # 200k cap is only a guard against pathologically large PDFs — real
+        # papers here are 60k–150k chars, so this captures them in full.
+        "fulltext": full_text_clean[:200000],
     }
 
 
@@ -222,7 +236,10 @@ def build_knowledge_graph(corpus, kw_model):
                    display=paper["display"], abstract=paper["abstract"])
 
     for paper in corpus:
-        text = paper["abstract"] + " " + paper["fulltext"][:2500]
+        # Concept extraction reads the abstract + a healthy chunk of the body
+        # (KeyBERT on the entire paper would be slow and noisy). 8000 chars
+        # comfortably covers the abstract, intro, and core methodology.
+        text = paper["abstract"] + " " + paper["fulltext"][:8000]
         try:
             keywords = kw_model.extract_keywords(
                 text,
@@ -259,12 +276,18 @@ def build_knowledge_graph(corpus, kw_model):
 # Step 3 — FAISS vector index over chunks
 # ---------------------------------------------------------------------------
 def build_faiss_index(corpus, embedder):
+    # Overlapping windows so a concept that straddles a boundary still lands
+    # whole in at least one chunk. ~110-word chunks with a 25-word overlap.
+    CHUNK_WORDS = 110
+    OVERLAP = 25
+    step = CHUNK_WORDS - OVERLAP
+
     chunks = []
     for paper in corpus:
         text = paper["abstract"] + " " + paper["fulltext"]
         words = text.split()
-        for i in range(0, len(words), 60):
-            chunk_text = " ".join(words[i:i + 60])
+        for i in range(0, len(words), step):
+            chunk_text = " ".join(words[i:i + CHUNK_WORDS])
             if chunk_text.strip():
                 chunks.append({"text": chunk_text, "paper_title": paper["title"]})
 
@@ -272,7 +295,7 @@ def build_faiss_index(corpus, embedder):
         return None, []
 
     texts = [c["text"] for c in chunks]
-    embeddings = embedder.encode(texts, show_progress_bar=False, batch_size=8)
+    embeddings = embedder.encode(texts, show_progress_bar=False, batch_size=32)
 
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
@@ -285,7 +308,7 @@ def build_faiss_index(corpus, embedder):
 # ---------------------------------------------------------------------------
 # Step 4 — GraphRAG retrieval
 # ---------------------------------------------------------------------------
-def graphrag_retrieve(query, top_k_per_paper=2, candidate_pool=15):
+def graphrag_retrieve(query, top_k_per_paper=3, candidate_pool=40):
     embedder = STATE["embedder"]
     index = STATE["faiss_index"]
     chunks = STATE["chunks"]
@@ -330,18 +353,24 @@ def graphrag_retrieve(query, top_k_per_paper=2, candidate_pool=15):
                 "related_papers": list(set(related_papers)),
             })
 
+    # Feed the LLM the human-readable paper titles so it cites them by name
+    # ("The Survey of Retrieval-Augmented...") instead of filenames ("2312.10997v5").
+    display_map = {p["title"]: p["display"] for p in corpus}
+
     context_parts = []
     for vc in vector_chunks:
-        context_parts.append(f"[From paper: {vc['paper_title']}]\n{vc['text']}")
-    for gc in graph_context:
         context_parts.append(
-            f"[Graph context for: {gc['paper']}]\n"
+            f"[From paper: {display_map.get(vc['paper_title'], vc['paper_title'])}]\n{vc['text']}"
+        )
+    for gc in graph_context:
+        related_display = [display_map.get(p, p) for p in gc["related_papers"]]
+        context_parts.append(
+            f"[Graph context for: {display_map.get(gc['paper'], gc['paper'])}]\n"
             f"Key concepts: {', '.join(gc['concepts'][:6])}\n"
-            f"Related papers: {', '.join(gc['related_papers'])}"
+            f"Related papers: {', '.join(related_display)}"
         )
 
     context = "\n\n---\n\n".join(context_parts)
-    display_map = {p["title"]: p["display"] for p in corpus}
     sources_display = [display_map.get(t, t) for t in paper_titles]
 
     return context, paper_titles, sources_display, list(set(all_concepts))
@@ -378,36 +407,67 @@ def bfs_learning_path(seed_concepts, G, corpus):
 # ---------------------------------------------------------------------------
 # Step 5 — Gemini call with mode-aware prompts and multi-model fallback
 # ---------------------------------------------------------------------------
-# gemini-1.5-flash-8b has 1000 RPM on the free tier — almost never rate-limited
+# A lightweight flash-lite model is the primary: it is far less likely to be
+# server-side overloaded (HTTP 503) than the brand-new heavyweight models, and
+# is plenty accurate for grounded, context-bounded answers. The heavier models
+# are fallbacks. (Note: there is no "gemini-3.5-flash-lite" — that ID 404s.)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",   # 1000 RPM free tier — last resort
+    "gemini-flash-lite-latest",  # primary — light, high availability
+    "gemini-3.5-flash",          # fallback — stronger, more contended
+    "gemini-2.5-flash",          # last resort
 ]
 
+# Server-side transient statuses. These mean "the model is busy right now",
+# not "your request was bad" — so we retry the SAME model with backoff before
+# moving on, rather than blowing through the whole chain on a momentary blip.
+_RETRYABLE_STATUS = {500, 503}
 
-def _call_gemini_once(prompt, api_key, model_name):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+# Keep generation lean so each call is light on the model, but deterministic
+# enough to stay accurate and grounded in the retrieved context.
+_GENERATION_CONFIG = {"temperature": 0.2, "topP": 0.9, "maxOutputTokens": 1024}
 
-    try:
-        resp = requests.post(url, json=payload, timeout=20)
-    except requests.RequestException as e:
-        return None, str(e)
 
-    if resp.status_code == 429:
-        log(f"{model_name} rate limited — skipping to next model")
-        return None, f"429 from {model_name}"
+def _call_gemini_once(prompt, api_key, model_name, max_retries=3):
+    # Authenticate with the x-goog-api-key header rather than a ?key= URL
+    # parameter. The newer "AQ."-prefixed Studio keys are rejected on the
+    # ?key= path (401 ACCESS_TOKEN_TYPE_UNSUPPORTED) but accepted via this header.
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    headers = {"x-goog-api-key": api_key}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": _GENERATION_CONFIG,
+    }
 
-    if not resp.ok:
-        log(f"Gemini error {resp.status_code}: {resp.text[:200]}")
-        return None, f"{model_name} error {resp.status_code}"
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        except requests.RequestException as e:
+            return None, str(e)
 
-    data = resp.json()
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"], None
-    except (KeyError, IndexError):
-        return None, f"Unexpected response from {model_name}"
+        if resp.status_code == 429:
+            log(f"{model_name} rate limited — skipping to next model")
+            return None, f"429 from {model_name}"
+
+        if resp.status_code in _RETRYABLE_STATUS:
+            # Exponential backoff (1s, 2s, 4s): give the overloaded model a
+            # moment to free up instead of hammering it.
+            wait = 2 ** attempt
+            log(f"{model_name} overloaded ({resp.status_code}) — "
+                f"retry {attempt + 1}/{max_retries} in {wait}s")
+            time.sleep(wait)
+            continue
+
+        if not resp.ok:
+            log(f"Gemini error {resp.status_code}: {resp.text[:200]}")
+            return None, f"{model_name} error {resp.status_code}"
+
+        data = resp.json()
+        try:
+            return data["candidates"][0]["content"]["parts"][0]["text"], None
+        except (KeyError, IndexError):
+            return None, f"Unexpected response from {model_name}"
+
+    return None, f"{model_name} still overloaded after {max_retries} retries"
 
 
 def call_gemini(question, context, api_key, sources_display=None, mode="qa"):
@@ -476,7 +536,14 @@ def initialize_pipeline():
 # ---------------------------------------------------------------------------
 @app.route("/")
 def home():
-    return render_template("index.html")
+    index_path = os.path.join(FRONTEND_DIST, "index.html")
+    if not os.path.exists(index_path):
+        return jsonify({
+            "error": "Frontend not built yet.",
+            "hint": "Run `cd frontend && npm install && npm run build`, "
+                    "or use the Vite dev server (`npm run dev`) during development.",
+        }), 503
+    return send_from_directory(FRONTEND_DIST, "index.html")
 
 
 @app.route("/api/status")

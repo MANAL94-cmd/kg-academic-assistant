@@ -1,15 +1,8 @@
-# Force the CPU-only PyTorch build. The default PyPI torch wheel bundles CUDA
-# (~2.5GB) and overruns Streamlit Cloud's disk/RAM limits, hanging the app on
-# the loading screen. The +cpu wheel is ~200MB and loads in far less memory.
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-
-streamlit>=1.35.0
-pyvis>=0.3.2
-PyMuPDF==1.24.10
-numpy>=1.23.0,<2.0
-networkx>=3.0
-faiss-cpu>=1.7.4
-sentence-transformers>=2.2.0
-keybert>=0.7.0
-requests>=2.28.0
+# This repo has two apps:
+#   • Primary: React frontend (frontend/) + Flask backend (backend/requirements.txt)
+#   • Legacy:  Streamlit app (legacy/requirements.txt)
+#
+# This root file exists so Streamlit Community Cloud (which installs from the
+# repo-root requirements.txt) can still deploy the legacy app pointed at
+# legacy/streamlit_app.py. It simply re-uses the legacy dependency list.
+-r legacy/requirements.txt
