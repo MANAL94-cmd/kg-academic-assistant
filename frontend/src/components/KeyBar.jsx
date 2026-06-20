@@ -2,13 +2,19 @@ import { useState } from "react";
 
 // The Gemini API key bar. The key lives only in React state for this tab — it
 // is sent straight to the backend per-request and is never persisted anywhere.
-export default function KeyBar({ connected, onConnect }) {
+export default function KeyBar({ connected, serverKey, onConnect }) {
   const [value, setValue] = useState("");
 
   const connect = () => {
     const trimmed = value.trim();
     if (trimmed) onConnect(trimmed);
   };
+
+  const statusText = serverKey
+    ? "connected — using the server-configured key (paste your own to override)"
+    : connected
+    ? "connected — key kept in memory only for this session"
+    : "not connected — never saved to the server";
 
   return (
     <div className="keybar">
@@ -24,11 +30,7 @@ export default function KeyBar({ connected, onConnect }) {
         onKeyDown={(e) => e.key === "Enter" && connect()}
       />
       <button onClick={connect}>Connect</button>
-      <span className="status">
-        {connected
-          ? "connected — key kept in memory only for this session"
-          : "not connected — never saved to the server"}
-      </span>
+      <span className="status">{statusText}</span>
     </div>
   );
 }

@@ -21,6 +21,7 @@ const DEFAULT_NOTE =
 
 export default function App() {
   const [geminiKey, setGeminiKey] = useState(null);
+  const [serverKey, setServerKey] = useState(false);
   const [backendState, setBackendState] = useState("connecting");
   const [papers, setPapers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -44,6 +45,7 @@ export default function App() {
         return;
       }
       setBackendState("live");
+      setServerKey(!!data.has_server_key);
       setPapers(data.papers || []);
       setStats(data.stats || null);
       const g = await getGraph();
@@ -109,7 +111,11 @@ export default function App() {
   return (
     <>
       <Masthead backendLabel={BACKEND_LABELS[backendState]} />
-      <KeyBar connected={!!geminiKey} onConnect={setGeminiKey} />
+      <KeyBar
+        connected={!!geminiKey || serverKey}
+        serverKey={serverKey && !geminiKey}
+        onConnect={setGeminiKey}
+      />
 
       <div className="shell">
         <CorpusPanel
@@ -122,7 +128,7 @@ export default function App() {
           mode={mode}
           onModeChange={setMode}
           answers={answers}
-          keyConnected={!!geminiKey}
+          keyConnected={!!geminiKey || serverKey}
           onAsk={runQuery}
         />
         <GraphView graphData={graphData} highlight={highlight} note={graphNote} />

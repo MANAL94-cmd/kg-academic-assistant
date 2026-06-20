@@ -58,6 +58,44 @@ _answer_cache: dict = {}
 PAPERS_DIR = os.path.join(BASE_DIR, "papers")
 SEED_DATA_PATH = os.path.join(BASE_DIR, "seed_corpus.json")
 
+
+# ---------------------------------------------------------------------------
+# Optional server-side API key. If present, the UI can run without the user
+# pasting a key (handy for a live demo). Resolution order:
+#   1. GEMINI_API_KEY environment variable
+#   2. a .env file in backend/ or the repo root — either "GEMINI_API_KEY=<key>"
+#      / "API_KEY=<key>" lines, or just the bare key on its own line.
+# The key is never committed: .env / .env.* are git-ignored.
+# ---------------------------------------------------------------------------
+def _load_default_api_key():
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if key:
+        return key
+
+    for path in (os.path.join(BASE_DIR, ".env"),
+                 os.path.abspath(os.path.join(BASE_DIR, "..", ".env"))):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                name, _, val = line.partition("=")
+                if name.strip().upper() in ("GEMINI_API_KEY", "API_KEY", "GOOGLE_API_KEY"):
+                    return val.strip().strip('"').strip("'")
+            else:
+                return line.strip('"').strip("'")
+    return ""
+
+
+DEFAULT_API_KEY = _load_default_api_key()
+
 # ---------------------------------------------------------------------------
 # Global state — built once at startup, rebuildable via /api/rebuild
 # ---------------------------------------------------------------------------
@@ -561,6 +599,7 @@ def status():
 
     return jsonify({
         "ready": True,
+        "has_server_key": bool(DEFAULT_API_KEY),
         "papers": papers,
         "stats": {
             "paper_nodes": len(papers),
@@ -604,16 +643,18 @@ def ask():
         return jsonify({"error": "Pipeline still initializing — try again in a few seconds."}), 503
 
     body = request.get_json(force=True)
-    question = (body or {}).get("question", "").strip()
-    api_key = (body or {}).get("api_key", "").strip()
-    mode = (body or {}).get("mode", "qa").strip()
+    question = ((body or {}).get("question") or "").strip()
+    # Use the user-supplied key if present, otherwise fall back to the
+    # server-configured key (see _load_default_api_key).
+    api_key = ((body or {}).get("api_key") or "").strip() or DEFAULT_API_KEY
+    mode = ((body or {}).get("mode") or "qa").strip()
 
     if mode not in QUERY_PROMPTS:
         mode = "qa"
     if not question:
         return jsonify({"error": "No question provided."}), 400
     if not api_key:
-        return jsonify({"error": "No Gemini API key provided."}), 400
+        return jsonify({"error": "No Gemini API key provided. Paste one in the bar at the top, or set GEMINI_API_KEY on the server."}), 400
 
     try:
         context, source_keys, source_display, concepts = graphrag_retrieve(question)
