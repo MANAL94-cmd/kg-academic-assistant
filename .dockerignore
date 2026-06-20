@@ -1,0 +1,13 @@
+.git
+.gitignore
+**/node_modules
+frontend/dist
+legacy
+backend/papers
+**/__pycache__
+*.pyc
+.env
+.env.*
+*.env
+.devcontainer
+README.md
