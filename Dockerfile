@@ -32,5 +32,9 @@ COPY --from=frontend /app/frontend/dist ./frontend/dist
 # HuggingFace Spaces (and the rest) reach the app on 7860.
 EXPOSE 7860
 
+# One worker keeps a single copy of the model/index in memory; the threads
+# let concurrent users overlap (each /api/ask mostly waits on Gemini's HTTP
+# call, which releases the GIL, so multiple requests run in parallel).
 CMD ["gunicorn", "--chdir", "backend", "app:app", \
-     "--bind", "0.0.0.0:7860", "--timeout", "120", "--workers", "1"]
+     "--bind", "0.0.0.0:7860", "--timeout", "120", \
+     "--workers", "1", "--threads", "8", "--worker-class", "gthread"]
