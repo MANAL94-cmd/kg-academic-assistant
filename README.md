@@ -1,5 +1,3 @@
-<!-- The block below is Hugging Face Spaces config (Docker SDK). It is required
-     for deploying as a Space and is ignored by GitHub's renderer otherwise. -->
 ---
 title: KG Academic Assistant
 emoji: 📚
